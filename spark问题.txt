@@ -1,0 +1,23 @@
+1、首先来说说spark任务运行完后查错最常用的一个命令，那就是把任务运行日志down下来。 程序存在错误，将日志down下来查看具体原因！down日志命令：yarn logs -applicationId app_id
+
+2、Spark程序优化所需要关注的几个关键点——最主要的是数据序列化和内存优化
+	问题1：reduce task数目不合适
+		解决方法：需根据实际情况调节默认配置，调整方式是修改参数spark.default.parallelism。通常，reduce数目设置为core数目的2到3倍。数量太大，造成很多小任务，增加启动任务的开销；数目太少，任务运行缓慢。
+	问题2：shuffle磁盘IO时间长
+		解决方法：设置spark.local.dir为多个磁盘，并设置磁盘为IO速度快的磁盘，通过增加IO来优化shuffle性能；
+	问题3：map|reduce数量大，造成shuffle小文件数目多
+		解决方法：默认情况下shuffle文件数目为map tasks * reduce tasks. 通过设置spark.shuffle.consolidateFiles为true，来合并shuffle中间文件，此时文件数为reduce tasks数目；
+	问题4：序列化时间长、结果大
+		解决方法：Spark默认使.用JDK.自带的ObjectOutputStream，这种方式产生的结果大、CPU处理时间长，可以通过设置spark.serializer为org.apache.spark.serializer.KryoSerializer。另外如果结果已经很大，可以使用广播变量；
+	问题5：单条记录消耗大
+		解决方法：使用mapPartition替换map，mapPartition是对每个Partition进行计算，而map是对partition中的每条记录进行计算；
+	问题6：collect输出大量结果时速度慢
+		解决方式：collect源码中是把所有的结果以一个Array的方式放在内存中，可以直接输出到分布式?文件系统，然后查看文件系统中的内容；
+	问题7：任务执行速度倾斜
+		解决方式：如果是数据倾斜，一般是partition key取的不好，可以考虑其它的并行处理方式 ，并在中间加上aggregation操作；如果是Worker倾斜，例如在某些worker上的executor执行缓慢，可以通过设置spark.speculation=true 把那些持续慢的节点去掉；
+	问题8：通过多步骤的RDD操作后有很多空任务或者小任务产生
+		解决方式：使用coalesce或repartition去减少RDD中partition数量；
+	问题9：Spark Streaming吞吐量不高
+		解决方式：可以设置spark.streaming.concurrentJobs
+
+

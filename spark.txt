@@ -1,0 +1,23 @@
+﻿------------------------------------------------------
+Spark中每个Stage的任务是由Stage的最后一个RDD的分区所决定的，而Stage的由于Shuffler来划分的，当遇到ShuffledRDD时，就将前面的划分一个Stage，后面的RDD为下一个Stage的第一个RDD，...
+
+
+-------------------------------------------------------
+Spark on yarn一直Accept
+在conf中配置：
+	sparkConf.set("mapreduce.framework.name", "yarn");
+    sparkConf.set("mapreduce.jobtracker.address", "192.168.1.100:9001");
+    sparkConf.set("yarn.resourcemanager.hostname", "192.168.1.100");
+    sparkConf.set("yarn.resourcemanager.admin.address", "192.168.1.100:8033");
+    sparkConf.set("yarn.resourcemanager.address", "192.168.1.100:8032");
+    sparkConf.set("yarn.resourcemanager.resource-tracker.address", "192.168.1.100:8031");
+    sparkConf.set("yarn.resourcemanager.scheduler.address", "192.168.1.100:8030");
+    sparkConf.set("yarn.resourcemanager.hostname", "192.168.1.100");
+  根据环境进行调优：
+  	sparkConf.set("spark.rdd.compress", "true");
+    sparkConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer");
+    sparkConf.set("spark.storage.memoryFraction", "0.5");
+    sparkConf.set("spark.akka.frameSize", "100");
+    sparkConf.set("spark.default.parallelism", "98");
+
+

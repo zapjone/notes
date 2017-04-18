@@ -1,0 +1,112 @@
+standalone部署模式：
+1、在Spark中，创建SparkContext的时，会在其构造函数中创建TaskSchduler和DAGSchduler。
+2、在创建TaskSchduler时，会根据spark.master的url不同，创建不同的backend(本地创建LocalBackend，standalone创建CoarseGinedSchdulerExecutor[Driver]),而schduler则是TaskSchedulerImpl。并在之后会调用taskSchduler(TaskSchdulerImpl)的start方法。这个方法里会调用backend(standalone模式为：SparkDeploySchdulerBackend)的start方法。而这个方法在SparkDeploySchdulerBackend的start方法会首先调用父类(CoarseGrainedSchdulerBackend)的start方法，在CoarseGrainedSchedulerBackend的start方法中会创建Driver actor;之后再封装Command对象，并创建AppClient，并启动用AppClient的start方法，AppClient的start方法会创建ClientActor;当ClientActor创建后会向所有活动的Master进行注册应用;当Master收到应用注册(RegisterApplication)的时候，会对应用和资源情况等进行计算，并向ClientActor响应应用注册成功的消息，最后调用schduler方法来对worker来分配资源和启动Executor。
+
+4、schedule方法会先在worker上启动Driver，之后再对Worker资源分配，有2种方式：1/尽量打散，2/尽量集中，默认为第一种(尽量打散)，最后再调用launchExecutor方法来要求Worker启动Executor;而且也会向应用的Driver(ClientDriver[Driver])响应ExecutorAdded消息。
+
+5、当Worker actor接受到Master发送的LaunchExecutor(启动Executor)的消息时，会使用系统安装的java命令和解析参数(资源情况)来启动Executor(CoarseGrainedExecutorBackend),当Executor启动后，会向Driver(CoarseGrainedSchdulerBackend[ClientActor])进行注册;当Executor注册成功后，Driver会调用makeOffers方法，向Executor发送Task。
+
+6、创建好TaskSchduler和schdulerBakcend后便创建DAGSchduler。DAGScheduler中会创建DAGSchdulerEventProcessPool，用于存放job。并在DAGSchduler的中调用start方法。这个start方法在DAGS程度了人EventProcessPool的父类EventLoop中定义，EventLoop中的start方法会启动一个后台线程，这个后台线程会调用onReceive方法，DAGSchdulerEventProcessPool中对onReceive进行了重写。
+7、当RDD中遇到action算子时，会调用SparkContext的runJob方法，这个方法最后会调用DAGSchduler的runJob方法，DAGSchduler的runJob方法会最后调用submitJob方法，submitJob方法会将Job封装成JobSubmitted放入到DAGSchdulerEventProcessPool的队列中。
+8、前面创建DAGSchduler的时候已经在EventLoop中创建了一个后台线程会在队列中获取一个job，并将job交给DAGSchdulerEventProcessPool的onReceive来进行处理。
+9、DAGSchdulerEventProcessPool会用模式匹配来进行选择性处理，当是JobSubmitted时，则将这个job交给DAGScheduler的handleJobSubmitted处理。
+10、DAGSchduler开始划分stage(根据最后一个stage来获取引用)。最后提交所有等待的Stage，调用方法：submitWaitingStages。
+11、是否本地运行，如果是本地运行则进入第11步，如果不是本地则进入第12步。
+12、本地运行(LocalBackend)
+13、调用DAGSchduler的submitStage提交Stage，再用submitMissingTasks方法中使用TaskSchduler(TaskSchdulerImpl)的submitTasks来提交TaskSet。
+14、TaskSchduler(TaskSchdulerImpl)会调用backend(SparkDeploySchdulerBackend)的reviveOffers方法，SparkDeploySchdulerBackend继承自CoarseGrainedSchedulerBackend，所以，最后是调用的CoarseGrainedSchdulerBackend的reviveOffers方法。这个方法会向Driver actor(CoarseGrainedSchdulerBackend内部的DriverActor)发送ReviveOffers消息。当Driver actor接受到这个消息后，会调用launchTasks方法，这个launchTasks方法会向Executor发送LaunchTasks消息。
+
+15、当Executor收到launchTask后，会调用Executor的launchTask将job放入到线程池中，并启动线程池。
+---------------------------------------------------------
+Spark应用之间的资源调度：
+	如果是在集群上运行，每个spark应用都会获得一批独占的executor JVM，来执行其任务并存储数据。如果有多个用户共享集群，那会会有很多资源分配相关的选项，如何设置还取决于具体的资源管理器。
+  standalone mode：默认情况下，Spark应用在独立部署的集群中使用FIFO模式顺序调度提交运行，并且每个Spark应用都会占用集群中所有可用节点。可以设置spark.cores.max或者spark.deploy.defaultCores来限制单个应用所占用的节点个数。还可以使用spark.executor.memory来对各个应用的内存占用量进行控制。
+  mesos：在mesos中要使用静态划分的话，需要将spark.mesos.corase设置为true，同样，你也可以可以设置spark.cores.max来控制各个应用所占用的CPU总数，以及spark.executor.memory来控制应用所占用的内存量。
+  yarn：在yarn中需要使用-num-executors选项来控制spark应用在集群中分配的executor的个数，对于单个executor所占的资源，可以使用-executor-memeory和-executor-cores来控制。
+
+  在Mesos中另一中可用的方式的动态共享CPU。在这种模式下，每个Spark应用的内存占用任然是固定独占的(任然有spark.executor.memeory决定)，但是如果该spark应用没有在某台机器上执行任务的话，那么其他任务就可以占用该机器上的cpu。这种模式对集群中有大量不是很活跃应用的场景非常有效，但这种模式不适合低延迟的场景，因为当Spark应用需要使用CPU的时候，可能需要等待一段时间才能获取CPU的使用权。要使用这种模式，只在mesos://URL上设置sparl.mesos.coarse属性为false即可。
+
+目前，Spark中还没有一种资源分配支持跨Spark应用内存共享。
+
+
+动态资源分配：
+  Spark还提供了一种基于负载来动态调节Spark应用资源占用的机制。这意味着，当应用在资源空闲的时候会将其进行释放给集群，而后续用到的时，再次进行申请资源。这个特性默认情况下是禁止的，但是在所有的粗粒度集群管理器中都是可用的。要使用这一特性，需要两个前提：
+  1、应用必须设置spark.dynamicAllocation.enabled为true
+  2、必须在每个节点上启动一个外部混洗服务(external shuffle service)，并在应用中将spark.shuffle.server.enabled设为true。外部混洗服务的目的是为了在删除executor的时候，任然保留其输出的混洗文件，启动外部混洗服务在各个集群管理器上各不相同:
+  a、在Spark独立部署模式下，只需要在worker启动前设置spark.shuffle.service.enabled为true即可。
+  b、在Mesos粗粒度模式下，需要在各个节点上运行${SPARK_HOME}/sbin/start-mesos-shuffle-service.sh并设置spark.shuffle.service.enabled为true即可。
+  c、在yarn模式下启动混洗服务最复杂，需要按以下步骤在nodemanager上启动：
+  	1、首先构建Spark。如果有已经打包的Spark，可以忽略这一步。
+  	2、找到spark-<version>-yarn-shuffle.jar。如果是自定义编译，其位置应该在${SPARK_HOME}/network/yarn/target/scala-<version>，否则在lib目录下找到此jar包。
+  	3、将该jar包添加到NodeManager的classpath路径下。
+  	4、配置各个节点上的yarn-site.xml，将spark_shuflle添加到yarn.nodemanager.aux-services中，然后将yarn.nodemanager.aux-services.spark_shuffle.class设置为org.apache.spark.network.yarn.YarnShuffleService，并将spark.shuffle.service.enabled设置为true。
+  	5、最后重启各个节点上的NodeManager。
+
+资源分配策略：
+	Spark应该在executor空闲的时候将其关闭，而在后续需要使用的时候，再次申请。因为没有一个固定的方法，可以预测一个executor在后续是否马上回被分配去执行任务，或者一个新分配的执行器实际上是空闲的，所以需要一些试探性的方法来决定是否申请或移除一个executor：
+	  请求策略：一个启动了动态分配的Spark应用会在有等待任务需要被调度的时候，申请额外的executor。这种情况下，必定意味着已有的executor已经不足以同时执行所有未完成的任务。
+	  Spark会分轮次来申请executor。实际的资源申请，会在任务挂起spark.dynamicAllocation.schedulerBacklogTimeout秒后首次触发，其后如果等待队列中任有挂起的的任务，则每过spark.dynamicAllocation.sustainedSchedulerBacklogTimeout秒后触发一次资源申请。另外，每一轮所申请的资源都是以指数形式增长。例如：一个Spark应用可能首次申请到了1个executor，后续申请的个数可能为2个、4个、8个...
+	  采用指数级增长策略的原因有两个：第一，对于任何一个Spark应用如果只是需要申请少数几个executor的话，那么必然非常谨慎地启动资源申请，这和TCP慢启动有点类似；第二，如果一旦Spark确实需要申请多个executor的话，那么可以确保其所需要的计算资源及时的增长。
+	  移除策略：移除策略非常简单。Spark应用会在某个执行器空闲超过spark.dynamicAllocation.executorIdleTimeout秒后将其删除。在对大多数情况下，executor的移除条件和申请条件都是互斥的，也就是说，executor在有待执行的任务时，不应该空闲。
+
+Spark应用内部的资源调度：
+	在指定的Spark应用内部(对应一个SparkContext实例)，多个线程可能并行的提交作业(job)，在这里，所有的作业(job)是指由Spark action算子（如，collect）触发的一系列计算任务的集合。Spark调度器是完全线程安全的，并且能够支持Spark应用同时处理多个请求（如，来自不同用户的查询）。
+
+	默认，Spark应用内部使用FIFO调度策略。每个作业被划分为多个阶段(stage)，(如，map阶段、reduce阶段)，第一个作业在其启动后会优先获取所有的可用资源，然后第二个作业再申请，再第三个...，如果后面的作业没有把集群资源占满，则后续的作业可以立即运行，否则后续提交的作业会有明显的延迟。
+
+	不过从Spark 0.8开始，Spark也能支持各作业间的公平调度(FAIR Scheduler)。公平调度时，Spark以轮询的方式给每个作业分配资源，因此所有的作业所获得的资源都是平均分配的。这意味着即使有大作业执行，小作业也能立即获得计算资源而不是等待前面的作业执行结束，这样大大降低了延迟时间，这种方式适合多用户作业。
+	要启用公平调度器，只需要配置SparkContexxt中spark.scheduler.mode为FAIR即可：
+	val conf = new SparkCof().setMaster("").setAppName("")
+	conf.set("spark.scheduler.mode", "FAIR")
+	val sc = new SparkContext(conf)
+
+公平调度资源池：
+	公平调度器还可以支持将作业分组放入资源池(pool)，然后给每个资源池分配不同的选项（如，权重）。这样就可以给一些比较重要的作业创建要给“高优先级”资源池，或者也可以每每个用户分为一组，这样各个用户就可以分享集群资源，而不是作业平均分配集群资源。Spark中的公平调度器是模仿Hadoop中的公平调度器(Fair Scheduler)来实现的。
+
+	默认情况下，新提交的作业都会被放入一个默认的资源池，不过作业对应哪个资源池，可以在提交作业的线程中使用SparkContext.setLocalProperty设定spark.scheduler.pool来设置：
+	sc.setLocalProperty("spark.scheduler.pool", "pool1")
+	一旦设置了局部属性，所有该线程提交的作业(即，在该线程中调用action算子，如，RDD.save/count/collect等)都会使用这个资源池。这个设置是以为线程为单位的保存的，你很容易实现用同一线程来提交同一用户的所有作业到同一个资源池中。同样，如果需要清除资源池设置，只需要在对应的线程中调用如下代码：
+	sc.setLocalProperty("spark.scheduler.pool", null)
+  
+  资源池的默认行为：
+  	默认地，各个资源池之间平均整个集群资源（包括default资源池），但在资源池内部，默认情况下，还是一FIFO顺序执行的，例如，如果为每个用户创建了资源池，那个就意味着各个用户之间共享整个集群的资源，但每个用户自己提交的作业是按照顺序执行的，而不会出现后提交的作业抢占前面作业的资源。
+  配置资源池属性：
+  	资源出的属性需要通过配置来指定，每个资源池都支持一下3个属性：
+  		1、schedulingMode：可以是FIFO或FAIR，控制资源池内部的作业是如何调度的。
+  		2、weight：控制资源池相对其他资源池，可以分配的资源比例。默认所有资源池的weight都是1。如果将某个资源池的weight设置为2，那么该资源池中的资源就是其他资源池的2倍。如果将资源池的weight设置过高，如1000，可以实现资源池之间的调度优先级，也就是说，weight=1000的资源池总能立即启动对应的作业。
+  		3、minShare：除了整体weight外，每个资源池还能指定一个最小资源分配值(CPU个数)，管理员可能需要这个设置。公平调度器总是会尝试优先满足所有活跃(active)资源池的最小资源分配值，然后再根据各个池子的weight来分配身下的资源。因此，minShare属性能搞确保每个资源池至少获得一定量的集群资源。minShare的默认值是0.
+  	资源池属性是一个XML文件，可以基于${SPARK_HOME}/conf/fairscheulder.xml.template修改，然后在SparkConf的spark.scheduler.allocation.file属性指定文件路径：
+  		conf.set("spark.scheduler.allocation.file", "/path/to/file")
+  	资源池XML配置文件格式如下，其中每个pool对应一个资源池，每个资源池也可以独立配置：
+  	<?xml version="1.0"?>
+  	<allocations>
+  		<pool name="production">
+  			<schedulingMode>FAIR</schedulingMode>
+  			<weight>1</weight>
+  			<minShare>2</minShare>
+  		</pool>
+  		<pool name="test">
+  			<schedulingMode>FAIR</schedulingMode>
+  			<weight>2</weight>
+  			<minShare>3</minShare>
+  		</pool>
+  	</allocations>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,50 @@
+Spark ON YARN模式时，在Spark standalone中的Web UI中无法查看日志信息的解决方案：
+	1、修改spark-default.conf
+		修改$SPARK_HOME/conf/spark-default.conf
+		spark.eventLog.enabled true
+		spark.eventLog.compress true
+		spark.eventLog.dir file:///home/zap/eventLog
+		spark.yarn.historyServer.address master:18080
+		解释：
+			spark.eventLog.enabled开启时间记录，默认为false。
+			spark.eventLog.compress是否压缩记录Spark时间，默认snappy压缩。
+			spark.eventLog.dir存储日志路径，可以是hdfs(如，hdfs://hadoop01:9000/history)或driver本地路径，在此之前一定要先创建此目录，否则报错。
+			spark.yarn.historyServer.address是设置Spark history server的地址和端口，这个链接会链接到YARN检测界面上的Tracking UI。
+		这样点解YARN上的任务的History就可以跳转到Spark Web UI查看相应的日志。
+	2、修改spark-env.sh
+		export SPARK_HISTORY_OPTS="-Dspark.history.ui.port=18080 -Dspark.history.retainedApplications=3 -Dspark.history.fs.logDirectory=file:///home/zap/eventLog"
+		解释：
+			ui.pot端口号需要和spark-default.conf保持一致。
+			retainedApplications表示historyServer上显示的最大application数量，如果超过这个数量，旧的application信息将会被删除。
+			fs.logDirectory日志目录和spark-default.conf保持一致。
+	3、启动Spark History Server
+		在spark目录下使用命令：sbin/start-history-server.sh
+成功后，打开http://hadoop01:18080，就额可以看到响应的日志记录列表，进去之后也可以装到Spark Web UI上。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,9 @@
+1、解析参数和配置。
+2、初始化变量和属性等。
+3、使用AkkaUtil来创建ActorSystem。
+4、启动定时器来检测Worker是否活着(检测其最后的心跳时间是否已经超过1分钟)，如果死亡，则删除此worker，在删除worker的时候，需要检测其worker的状态信息，并移除此worker上运行的executor(向App actor[ClientActor]发送ExecutorUpdated消息)和driver(重新进行调度driver[schedule方法])重新分配driver运行的worker。最后才移除此worker。
+4、调用其preStart函数来初始化一些信息(绑定源、启动web服务器等)，在最后会向自己(Master)发送竞选Leader的消息。
+5、Master收到竞选Leader的消息后（不同的方式有不同的策略，默认为NONE，则为MonarchyLeaderAgent，还可以是zookeeper、文件系统、自定义等），先判断Master内的属性是否为空(app、driver、worker是否为空)，如果都为空，则说明是第一次启动，直接将状态记录为ACTIVE，否则则是从错误中恢复过来的。
+6、如果是失败中恢复过来后，app重新注册，所有的driver重新记录，所有的worker重新注册。
+7、Master启动完成。
+

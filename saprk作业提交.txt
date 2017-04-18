@@ -1,0 +1,20 @@
+spark standalone模式下的driver的类：org.apache.spark.deploy.worker.DriverWrapper。
+
+./bin/spark-submit \
+  --class <main-class> \		// class：org.apache.spark.examples.SparkPi
+  --master <master-url> \		// spark的url：spark://23.195.26.187:7077,如果是yarn则直接写为yarn，如果是mesos和spark则需要写url地址
+  --deploy-mode <deploy-mode> \	// driver的工作节点的模式：cluster/client，默认为client
+  --conf <key>=<value> \		// 配置信息
+  ... # other options
+  <application-jar> \			// 程序jar包或依赖的jar包
+  [application-arguments]		// 程序需要提供的参数
+
+master urls:
+	local：运行在本地，一个线程中
+	local[k]：运行在本地，K个线程中
+	local[*]：运行在本地，多个线程中
+	spark://HOST:PORT：链接到spark自带的管理器中，端口默认为7077
+	mesos://HOST:PORT：链接到mesos的管理中，并要设置--deploy-mode为cluster
+	yarn：链接到yarn的集群中，可以设置为client和cluster，默认为client，即driver运行在本地，executor进行再yarn中，而cluster则将所有的节点都运行在yarn中。
+
+

@@ -1,0 +1,18 @@
+1、spark streaming接受到数据后，在spark中进行存储，之后将确认信息存储到zookeeper上（偏移量），这种情况下，就算接收器挂掉，zookeeper上还没来得及更新确认信息，还会再次发送消息处理，这种属于接收器挂掉(executor)
+
+2、将元数据持久化到外部存储系统中，如果HDFS中，这种就是对于元数据进行checkpoint，这种属于驱动器挂掉(driver)
+
+以上还是有可能出现数据都是的情况：
+	1、当executor接受到消息后，并将其存储到了executor的内存中，再向数据源通知已经收到消息时后executor开始处理时，driver挂掉，当driver挂掉，所有的executor都将被kill掉，存储在executor内存中的消息将不复存在。
+	
+	这种解决方案是使用WAL（Write ahead log），启用WAL机制，将已经收到的消息被接收器写入到容器存储中，如HDFS，由于采用了WAL机制，driver可以从失败的点重新读取数据。
+
+	WAL可以确保数据不丢失，但是无法确保消息只被处理一次(exactly-once)，
+		场景：接收器接收到数据，并将其存储到了WAL中，在向zookeeper中设置kafka的偏移量之前executor突然挂掉了。
+		这种场景下，spark将数据存储到了WAL中，而kafka却认为消息还没有被消费(zookeeper中的偏移量还没有设置成功)，这是spark会重复接受这条消息，就无法达到消息只发送一次。
+	从spark1.3以后，spark提供了kafka direct api，spark driver是需要简单计算下一个batch需要处理的kafka中偏移量的范围，然后命令spark executor直接从kafka相应的topic中消费消息。
+最后：
+1、不再需要Kafka接收器，Exectuor直接采用Simple Consumer API从Kafka中消费数据。
+2、不再需要WAL机制，我们仍然可以从失败恢复之后从Kafka中重新消费数据；
+3、exactly-once语义得以保存，我们不再从WAL中读取重复的数据。
+

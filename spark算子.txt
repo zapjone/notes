@@ -1,0 +1,123 @@
+﻿#####################基本转换算子#####################
+	1、coalesce(partitionNum, isShuffe)：重新分区，如果设置的分区数大于原分区数，则需要设置是否shuffle，默认shuffle为false。
+
+	2、partitions：获取RDD的分区数。
+
+	3、randomSplit(weights, seed)：根据权重将RDD拆分成多个RDD，seed为随机种子，有默认值。可以不用给。
+
+	4、glom：将RDD中每个分区类型为T的元素类型转换为Array[T]，这样每个分区中就只有一个数组元素，之后再将每个分区结果封装到一个Array中，这样就成一个二维数组。
+
+	5、union(otherRDD)：合并RDD，不去重。
+
+	6、intersection(otherRDD, [numPartitions])：返回两个RDD的交集，并去重，numPartitions为分区数，分区数是重载的一个函数。
+
+	7、subtract(otherRDD,[numPartitions])：返回两个RDD的差集，返回在的当前RDD中出现的，而不在otherRDD中出现的元素，不去重。
+
+	8、mapPartitions：该函数和map函数类似，只不过该映射函数的参数的RDD中的每个分区的迭代器，而map函数的输入参数的RDD中的每个元素。
+
+	9、mapPartitionsWithIndex：和mapPartitions类似，只是第一个参数是传入分区的索引。
+
+	10、zip：zip函数用于将两个RDD组合成key/value形式的RDD，这里默认两个RDD的分区数量以及元素数量都相同。
+
+	11、zipPartitions：zipPartitions函数将多个RDD按照partition组合成为新的RDD，该函数需要组合的RDD具有相同的分区，而组合的RDD的元素个数却没有要求
+
+	12、zipWithIndex：该函数将RDD中的元素和这个元素在RDD中的ID(索引值)组合成键值对。
+
+	13、zipWithUniqueId：该函数将RDD中元素和一个唯一ID组合成键值对，该唯一ID生成算法如下：
+		每个分区中第一个元素的唯一ID值为该分区的索引号，
+		每个分区的第N个元素的唯一ID值为:(前一个元素的唯一ID值) + (分区总数)
+
+#####################键值转换算子#####################
+1、partitionBy：该函数根据partitioner函数生成新的ShuffleRDD，将原RDD重新分区。需要传入一个Partitioner对象
+
+2、mapValues：该函数和map函数相同，只是mapValues是针对[K,V]的V值进行操作的
+
+3、flatMapValues：该函数和flatMap函数相同，只是flatMapValues是针对[K,V]的V值进行flatMap操作的
+
+4、combineByKey：该函数用于将RDD[K,V]转换成RDD[K,C]，这里的V类型和C类型可以相同也可以不相同。
+
+5、foldByKey：对RDD[K,V]根据K进行折叠操作，需要提供一个初始值，之后的函数的第一个参数为上次折叠的值，第二个参数为当前需要迭代的值。
+
+6、groupByKey：该函数用于将RDD[K,V]中每个K对应的V值，合并到一个Iterator[V]中。
+
+7、reduceByKey：该函数用于将RDD[K,V]中每个K对应的V值根据隐射的函数进行运算。
+
+8、reduceByKeyLocally：该函数将RDD[K,V]中每个K对应的V值根据映射函数(传入的参数是一个函数)来进行计算，运算结果为一个Map[K,V]中，而不是RDD[K,V]中。
+
+9、cogroup：该函数相当于SQL中的全外关联full outer join，返回左右RDD中的记录，如果关联不上则为空。
+
+10、join：该函数相当于SQL中的内关联join，只返回两个RDD根据K可以关联上的结果，join只能用于两个RDD之间的关联，如果要多个进行关联，需要进行多次调用，关联多次。（将K相同的V进行组合为一个序列）
+
+11、leftOuterJoin：类似于SQL中的左外关联left outer join，返回结果以前面的RDD为主，关联不上的为空。只能用于两个RDD之间关联，如果需要关联多个，则需要调用多次进行关联。
+
+12、rightOuterJoin：rightOuterJoin类似与SQL中的右外连接right outer join，返回结果以右边(当作参数传入的RDD)为主，关联不上的为空。只能用于两个RDD之间关联，如果需要关联多个RDD，需要多次调用进行关联。
+
+13、subtractByKey：subtractByKey和subtract类似，只这里只针对K的，返回主RDD中出现，otherRDD中不存在的元素，subtractByKey为(K,V)而subtract为V。
+
+#####################行动算子#####################
+1、first：该函数返回RDD中的第一个元素，不排序
+
+2、count：该函数返回RDD中的元素数量
+
+3、reduce：该函数隐射函数(传入的函数参数)，对RDD中的元素进行二元运算（传入函数的参数是一个二元组），返回结算结果。
+
+4、collect：该函数用于将RDD转换成数组
+
+5、take(num)：该函数用于获取RDD中0到num-1下标的元素，不排序
+
+6、top(num)：该函数先将RDD中的元素进行排序，指定排序规则，默认降序，之后取出前0-num个元素
+
+
+7、takeOrdered(num)：该函数和top相反的顺序返回元素，取出RDD中排序后，RDD的元素总个数~num的下标的元素，相当于倒序取出元素
+
+8、aggregate：该函数用于堆叠，需要提供两个参数函数(函数作为参数)，第一个参数函数应用在rdd的每个分区中，这个函数的第一个参数为默认值，以后叠算的结果就当作第一个参数值，第二个参数为当前需要计算的值，初始值只在每个分区的第一次使用，rdd的所有分区都计算完成后，将rdd的分区的计算结果作用于第二个参数函数上，这个函数的第一个参数为提供的默认值，只是在第一次进行计算的时候需要使用到默认值，以后就用此函数返回值作为第一个参数值，第二个参数值为当前需要计算的值，得到最终结果。
+
+9、fold：fold是aggregate的简化，将aggregate的第一个参数函数和第二个参数函数使用同一个函数。
+
+10、lookup：该函数用于(K,V)类型的RDD，指定K值，返回RDD中该K对应的所有V值。
+
+11、countByKey：countByKey用于统计RDD[K,V]中每个K的数量
+
+12、foreach：该函数用于遍历RDD，将函数f应用于每个元素
+
+13、foreachPartition：foreachPartition和foreach类似，只是对每个分区使用参数函数
+
+14、sortBy：该函数根据给定的排序k函数(参数函数[传入的参数为函数])将RDD中的元素进行排序。
+
+15、saveAsTextFile：该函数用于将RDD以文本文件的格式存放到文件系统中
+
+16、saveAsSequenceFile：该函数用于将RDD以SequenceFile的文件格式保存到HDFS上
+
+17、saveAsObjectFile：该函数用于将RDD中的元素序列化成对象，存储到文件中
+
+18、saveAsHadoopFile：该函数将RDD存储在HDFS上的文件中，支持老版本的Hadoop API
+
+19、saveAsHadoopDataset：该函数用于将RDD保存到除了HDFS的其他存储中，如HBase
+	在conf中需要关注或设置5个参数：
+	文件的保存路径、key值的class类型、value值的class类型、RDD的输出格式(OutputFormat)、以及压缩相关的参数。
+
+20、saveAsNewAPIHadoopFile：该函数用于将RDD数据保存到Hadoop上，使用新版本的Hadoop API
+
+21、saveAsNewAPIHadoopDataset：该函数作用同saveAsHadoopDataset，只不过采用新版本的Hadoop api
+
+输出到其他非hadoop文件系统中时，需要设置的参数：
+	val sc = ???
+	sc.hadoopConfiguration.set("hbase.zookeeper.quorum", "zookeeper地址")
+	sc.hadoopConfiguration.set("zookeeper.znode.parent", "/hbase")
+	sc.hadoopConfiguration.set(TableOutputFormat.OUTPUT_TABLE, "hbase表名")
+
+	val job = new Job(sc.hadoopConfiguraiton)
+	job.setOutputKeyClass(classOf[ImmutableBytesWritable])
+	job.setOutputKeyValueClass(classOf[Result])
+	job.setOutputFormatClass(classOf[TableOutputFormat[ImmutableBytesWritable]])
+
+	// 之后使用save... api时，直接传入job.getConfiguration即可。
+
+
+#########################################################
+spark sql算子
+aggregateByKey(zeroValue)(seqOp, combOp,[numTasks])
+	seqOp：比较函数，传入当前key的一个value值和zeroValue进行比较，会返回一个类型和value类型一致的值，之后再次用combOp函数进行合并操作，将zeroValue值和seqOp函数操作的返回值进行合并操作,numTasks是可选的并行度。
+
+
+

@@ -1,0 +1,16 @@
+Dataset API和RDD类似，不过Dataset不使用java序列化或者Kryo，而是使用专门的编码器(Encoder)来序列化对象跨网络通信。如果这个编码器和标准序列化都能把对象转字节，那么编码器可以根据代码动态生成，并使用一种特殊数据格式，这种格式下的对象不需要反序列化回来，就能允许Spark进行操作，如过滤、排序、哈希等。
+
+Example:
+	// 对普通类型数据的Encoder是由 import sqlContext.implicits._自动提供的
+	val ds = Seq(1 to 3).toDS()
+	ds.map(_ + 1).collect() // 返回：Array(2, 3, 4)
+
+	// 以下这行不仅定义了case class，同时也自动为其创建了Encoder
+	case class Person(name: String, age: Long)
+	val ds = Seq(Person("Andy", 32)).toDS()
+
+	//DataFrame只需要提供一个和数据schema对于的class即可转换为Dataset。Spark会根据字段进行映射。
+	val path = "examples/src/main/resourcees/people.json"
+	val people = sqlContext.read.json(path).as[Person]
+
+
