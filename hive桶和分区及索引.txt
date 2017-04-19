@@ -1,0 +1,60 @@
+分区：
+	从一个分区表中查询数据加入到另一个分区表中，需要手动进行设置分区的信息，如果分区字段太多的话，太麻烦。此时，可以启用动态分区，动态分区启动参数：
+		set hive.exec.dynamic.partition=true // 启用动态分区
+		set hive.exec.dynamic.partition.mode=nostrict// 设置为非严格模式
+	  设置好自动分区后使用如下语法进行添加：
+	  	insert into table tableName partition(partitionCol...) select *,partitionCol... from otherTableName;
+
+tablesample(取样)：语法：TABLESAMPLE(BUCKET x OUT OF y [on col])
+	y必须是table总bucket数的倍数或者因子。hive根据y的大小，决定抽样的比例。例如，table总共分了64份，当y=32时，抽取 (64/32=)2个bucket的数据，当y=128时，抽取(64/128=)1/2个bucket的数据。x表示从哪个bucket开始抽取。例 如，table总bucket数为32，tablesample(bucket 3 out of  16)，表示总共抽取（32/16=）2个bucket的数据，分别为第3个bucket和第（3+16=）19个bucket的数据
+	num = sum(buckets) / y;// 得到需要多少个桶的数据
+	num = {x + y};// 第一个桶为哪个桶
+	num = {x + y + y}//第二个桶为哪个桶。...
+
+Hive对于每个表或分区，可以进一步组织成桶，Hive也是针对某一列进行桶的组织。Hive采用对列值进行哈希(hash)，然后除以桶的个数求余的方式来决定该条记录存放在哪一个桶中。
+
+hive中table可以拆分成partition，table和partition可以通过‘CLUSTERED BY ’进一步分bucket，bucket中的数据可以通过‘SORT BY’排序。
+
+分区参数：
+	hive.exec.max.dynamic.partitions.pernode （缺省值100）：每一个mapreduce job允许创建的分区的最大数量，如果超过了这个数量就会报错
+	hive.exec.max.dynamic.partitions （缺省值1000）：一个dml语句允许创建的所有分区的最大数量
+	hive.exec.max.created.files （缺省值100000）：所有的mapreduce job允许创建的文件的最大数量
+
+桶的好处：
+	1、对于JOIN操作两个表，有一个相同的列，如果这两个表都进行了桶的划分。那么将保存列值的桶进行JOIN操作就可以了，可以减少JOIN的数据量。
+桶的主要作用：
+	1. 数据sampling
+	2、提升某些查询操作效率，例如mapside join
+  需要特别注意的是：clustered by和sorted by不会影响数据的导入，这意味着，用户必须自己负责数据如何如何导入，包括数据的分桶和排序
+  
+  'set hive.enforce.bucketing = true'  可以自动控制上一轮reduce的数量从而适配bucket的个数，当然，用户也可以自主设置mapred.reduce.tasks去适配bucket 个数，推荐使用'set hive.enforce.bucketing = true'，当设置此属性为true后，Hive的查询中的mapreduce的reduce的数量会适配分桶表中桶的数量(即reduce的数量等于桶的数量)。
+
+索引：
+	创建语法：
+		create index indexName on table tableName(colName) as 'org.apache.hadoop.hive.ql.index.compact.CompactIndexHandler' with deferred rebuild in table indexTableName [comment '索引描述信息'];
+	indexName：创建的索引名称。
+	tableName：需要对那个表创建索引，并指定列。
+	indexTableName：在hive中索引是存储在另一张表中的，这个名称指定存储索引的表名称。
+	org.apache.hadoop.hive.ql.index.compact.CompactIndexHandler：索引的处理方式，还可以指定bitmap，其实bitmap是一个类的简写形式(使用简写和全称都可以)：
+		bitmap：org.apache.hadoop.hive.ql.index.bitmap.BitmapIndexHandler的简写。
+		compact：org.apache.hadoop.hive.ql.index.compact.CompactIndexHandler的简写。
+
+	查看语法：
+		show index on tableName;
+	tableName：查看哪个表中的索引。
+
+	删除语法：
+		drop index indexName on tableName;
+	indexName：指定索引名称。
+	tableName：这个indexName所在的表名。
+
+
+
+
+
+
+
+
+
+
+

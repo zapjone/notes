@@ -1,0 +1,53 @@
+1、添加conf/hive-site.xml文件
+	内容：
+	<property>
+		<name>javax.jdo.option.ConnectionURL</name>
+		<value>jdbc:mysql://centos01:3306/hive?createDatabaseIfNotExist=true</valule>
+	</property>
+	<property>
+		<name>javax.jdo.option.ConnectionDriverName</name>
+		<value>com.mysql.jdbc.Driver</valule>
+	</property>
+	<property>
+		<name>javax.jdo.option.ConnectionUserName</name>
+		<value>root</valule>
+	</property>
+	<property>
+		<name>javax.jdo.option.ConnectionPassword</name>
+		<value>mysql密码</valule>
+	</property>
+	[// 可选操作
+		修改hive-env.sh.template改为hive-env.sh,并设置HADOOP的安装目录
+		--------------------------------
+		将hive-default.xml.template改为hive-default.xml文件，并修改其中的存放路径
+		hive.metastore.warehouse.dir:存放在hdfs中的地址的属性名
+		/user/hive/warehouse:存放在hdfs中的默认的属性值
+	]
+2、初始化schema(new version required):
+	schematool -initSchema -dbType mysql
+     或:schematool -dbType mysql -initSchema
+
+3、启动：	
+	bin/hive
+
+----------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

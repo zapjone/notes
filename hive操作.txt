@@ -1,0 +1,341 @@
+﻿beeline使用：
+1、启动bin/hiveserver2
+2、使用beeline进行连接，连接命令：!connect jdbc:hive2://localhost:10000/[default]
+	之后输入用户名，此用户名需要访问到hadoop的权限问题
+
+#############
+hive伪列
+	row_number() over(partition by col_name [order by col_name])as col_show_name
+	partition by col_name：根据哪个列来继续编号(如果不是全部进行编号，全部进行依次编号则不用写)
+	order by col_name：根据哪个列来进行排序，如果不需要进行排序则不用写
+	as col_show_name：此伪列查询后所展示的列名
+
+
+###################hive配置###################
+datanucleus.autoCreateTables：boolean类型，不存在时，自动创建hive元数据表
+datanucleus.autoCreateColumns：boolean类型，不存在时，自动创建hive元数据列
+datanucleus.fixedDatastore：boolean类型
+datanucleus.autoStartMechanism：[SchemaTable]
+
+###################原始数据类型###################
+整型：
+	1、tinyint：微整型，占用1个字节，只能存储0~255的整数
+	2、smallint：小整型，占用2个字节，存储范围是-32768~32767
+	3、int：整型，占用4个字节，存储范围-2147483648~2147483647
+	4、bigint：长整型，占用8个字节，存储范围-2^63~2^63-1
+布尔型：
+	boolean：true/false
+浮点型：
+	float：单精度浮点数
+	double：双精度浮点数
+字符串型：
+	string：不设定长度
+复合数据类型：
+	structs：一组由任意数据类型组成的结构。比如，定义一个字段C的类型为struct{a int; b string}，则可以使用a和C.b来获取其中的元素值
+	maps：和java的map一致，存储K-V对
+	arrays：存储数组
+
+###################hive操作###################
+创建数据库：
+	create (database|schema)[if not exists]database_name
+		[comment database_comment] --数据库描述
+		[location hdfs_path]--数据库位置
+		[with dbproperties (property_name=property_value,...)];--数据库属性
+修改数据库：
+	alter (database|schema) database_name
+		set dbproperties(property_name=property_value,...);
+删除数据库：
+	drop (database|schema)[if exists]database_name
+		[restrict|cascade];--restrict为默认值，如果数据库下有表，则不允许删除，cascade则不管是否有表都强制删除。
+查看表的详细信息：
+	desc formatted tablename;--查看表的详细信息
+
+清空表数据：
+	truncate table tableName;
+
+###################hive视图###################
+视图：
+	1、只有逻辑视图，没有物化视图。
+	2、视图只能查询，不能Load/Insert/Update/Delete数据。
+	3、视图在创建时候，只是保存了一份元数据，当查询视图的时候，才开始执行视图对应的那些子查询。
+
+创建：
+	CREATE VIEW [IF NOT EXISTS] [db_name.]view_name [(column_name [COMMENT 	column_comment], …) ]
+
+		[COMMENT view_comment]
+
+		[TBLPROPERTIES (property_name = property_value, …)]
+
+		AS SELECT …;
+
+案例：
+	CREATE VIEW IF NOT EXISTS v_lxw1234 (url COMMENT ‘url’)
+		COMMENT ‘view lxw1234′
+		AS SELECT url FROM lxw1234
+		WHERE url LIKE ‘http://%’
+		LIMIT 100;
+
+删除视图：
+	DROP VIEW IF EXISTS v_lxw1234;
+
+修改视图
+	ALTER VIEW v_lxw1234 AS
+		SELECT url FROM lxw1234 limit 500;
+
+分区：分区可用出现多个，第一个字段为父目录，以后的都是子目录，查询时候，如果指定了子目录的话，则从子目录下开始查询，如果没有执行子目录的话，则直接查询父目录下的所有子目录。
+添加分区：
+	1、使用insert添加分区：
+		向分区中追加数据：
+		insert into table t_lxw1234 partition(monery = '2017-01', day = '2017-01-24') select * from dual;
+		覆盖分区数据：
+		insert overwrite table t_lxw1234 partition(monery = '2017-01', day = '2017-01-24') select * from dual;
+	2、使用alter table添加分区：
+		alter table t_lxw1234 add partition(monery = '2017-01', day = '2017-01-24') location 'hdfs://namenode/tmp/lxw1234/monery=2017-01/day=2017-01-24';
+查看分区对应的HDFS路径：
+	1、查看表的所有分区：
+		show partitions t_lxw1234
+	2、查看分区的详细信息：
+		desc formatted t_lxw1234 partition(monery = '2017-01', day = '2017-01-24');
+删除分区：
+	alter table t_lxw1234 drop partition(monery = '2017-01', day = '2017-01-24');
+
+动态分区：
+	将相应的数据插入到不同的分区中。
+	动态分区需要设置参数：
+		hive.exec.dynamic.partition
+			默认值：false
+			是否开启动态分区功能， 默认false关闭。
+		hive.exec.dynamic.partition.mode
+			默认值：strict
+			动态分区的模式，默认strict，标识必须指定至少一个分区为静态分区，nonstrict模式表示允许所有的分区字段都可以使用动态分区。一般需要设置为nonstrict
+		hive.exec.max.dynamic.partitions.pernode
+			默认值：100
+			在每个执行MR的节点上，最大可以创建多少个动态分区。
+		hive.exec.max.dynamic.partitions
+			默认值：1000
+			在所有执行MR的节点上，最大一共可以创建多少个动态分区
+		hive.exec.max.created.files
+			默认值：100000
+			整个MR Job中，最大可以创建多少个HDFS文件
+		hive.error.on.empty.partition
+			默认值：false
+			当有空分区时，是否抛出异常。一般不用设置。
+
+查询时的虚列(下的下划线是两个)：
+	input__file_name：hdfs上的文件目录
+	block__offset__inside__file：hdfs文件上的偏移量
+
+###################hive原理###################
+Hive的join可分为Common Join(Reduce阶段完成join)和Map Join(Map阶段完成join)。
+
+Hive Common Join(reduce阶段完成join)：
+	如果不执行MapJoin或者不符合MapJoin的条件，那么HIve解析器会将Join操作转换成Common Join操作，也就是Reduce阶段的Join。
+	整个过程包含Map、Shuffle、Reduce阶段。
+		Map阶段：
+			读取源表的数据，Map输出时以Join on条件中的列为key，如果Join有多个关联键，则以这些键组合作为key。
+			Map输出的value为join之后所关心的(select或者where中需要用到的)列，同时value中还会包含表的tag信息，用于标明此value对应的哪个表。
+			按照key进行排序。
+		Shuffle阶段：
+			根据key的值进行hash，并将key/value按照hash值推送至不同的reduce中，这确保两个表中相同的key位于同一个reduce中。
+		Reduce阶段：
+			根据key的值完成join操作，期间通过tag来标识不同表中的数据。
+Hive Map Join(map阶段wanchengjoin)：
+	MapJOin通常用于一个很小的表和一个达标jinxingjoin的场景，具体小表有多小，由参数hive.mapjoin.smalltable.filesize来决定，该参数表示小表的总大小，默认值为25000000字节，即25M。
+	Hive0.7之前，需要使用hint提示/*+mapjoin(table)*/才会执行MapJoin，否则执行Common Join，但在0.7版本后，默认自动会转换Map Join，由参数hive.auto.convert.join来控制，默认为true。
+
+------------------------------------------------------
+创建表：
+	create table table_name(field_name field_type,...)
+	row format delimited
+	fields terminated by '\t'; // fields terminated by '\t'：表示在文件中hive用什么分割属性
+extermnal外部表:
+	create external table tab_name(field_name field_type,...)
+	row format delimited
+	fields terminated by '\t'
+	stored as textfile	// textfile:文件格式，还有：(sequencefile,rcfile)
+	location '/external/user';// location:指定位置
+创建复杂类型表：
+create table table_map(name string,info map<string, string>)
+	row format delimited
+	fields terminated by '\t'// name和info之间的分割符
+	connection items terminated by ','// map(info)中每项的分割符
+	map keys terminated by ':';// map(info)中key和value的分隔符
+
+添加数据：
+	// 直接添加数据到指定的表中
+	load data local inpath '/home/zap/data.log' 
+		into table t_order;
+
+	// 追加数据,以前表中的数据不会被删除
+	insert into table table_name 
+		select * from table_2_name;
+
+	// 覆盖数据, 以前表中的数据将被删除	
+	insert overwrite table table_name 
+		select * from table_2_name;
+
+将结果保存到文件中(导出数据只能使用overwrite)
+	// 将查询结果放入到客户机本地
+	insert overwrite local directory '/home/zap/hivetmp/data.data'
+		select * from table_name;
+
+	// 将查询结果保存到hdfs中
+	insert overwrite directory '/hadoop/dir/hivetmp/data.data'
+		select * from table_name;
+	也可以指定分隔符，如果不指定分隔符，默认是以Control+A来分隔的,指定分隔符和创建表时的语法是一样的，还可以指定导出后保存的文件格式：
+	insert overwrite local directory '/home/zap/output'
+		[row format delimited
+		fields terminated by '\t'
+		stored as textfile/sequencefile/rcfile]
+		select * from table_name;
+直接在终端查询显示：
+	hive -S -e 'select * from table_name'
+
+---------------------------------------------------
+使用thrift服务链接
+1、启动服务：hiveserver2
+2、使用beeline进行连接，在启动beeline后输入地址:!connect jdbc:hive2://localhost:10000默认是10000端口，之后需要输入用户名和密码，没有则直接回车
+
+创建表格：
+	create table tableName(col colType...)
+		partitioned by(otherCol colType)
+		clustered by(col)
+		sorted by(col) into num_bucket buckets
+		row format delimited
+		fields terminated by 'char'
+		stored as storeType // textfile/sequencefile/RCFile
+
+hive的桶必须要开启设置：
+	set hive.enforce.bucketing = true;
+	// 分桶的reduce和分桶的数量一致
+	set mapreduce.job.reduces=4
+
+查询：
+left join：左连接，以左边表为主
+right join：右连接，以右边表为主
+inner join：内连接，只显示匹配的数据
+full outer join:全连接，匹配所有，如果不匹配的则显示为NULL
+left semi join：匹配查询出来的左边一半数据，(semi：一半)
+
+###################Hive结合Hbase操作###################
+创建示例：
+	set hbase.zookeeper.quorum=zkNode1,zkNode2,zkNode3;
+	set zookeeper.znode.parent=/hbase;
+	add jar /user/local/appche-hive-0.13.1-bin/lib/hive-hbase-handler-0.13.1.jar;
+
+	create external table lxw1234(
+		rowkey string, -- HBase行键
+		f1 map<string, string>,-- HBase列族
+		f2 map<string, string>,-- HBase列族
+		f3 map<string, string> -- HBase列族
+	) stored by 'org.apache.hadoop.hive.hbase.HBaseStorageHandler'
+	with serdeproperties('hbase.columns.mapping' = ':key,f1:,f2:,f3:')
+	tblproperties('hbase.table.name' = 'lxw1234');
+解释：
+	hbase.zookeeper.quorum：
+		指定HBase使用的zookeeper集群，默认端口为2181。
+	zookeeper.znode.parent：
+		指定HBase在zookeeper中使用的根目录
+	hbase.columns.mapping：
+		Hive表和HBase表的映射关系，分布为：Hive表中第一个字段映射:key(rowkey)，第二个字段映射列族f1，第三个字段映射列族f2，第三个字段映射列族f3
+	hbase.table.name：
+		HBase中表的名称
+
+之后使用hive操作都会对HBase进行MapReduce操作，如果删除Hive表，则HBase则也删除(Hive内部表)，如果使用外部表，则不会删除HBase中的表。
+
+
+------------------------------------------------------
+清空表
+	truncate table tableName;
+
+创建分区表
+create table if not exists table_name(fieldName fieldType...) partitioned by (partitionField partitionFieldType,...) row format delimited fields terminated by ',' stored as textfile;
+  当有多个分区时，分区的目录是进行叠加的，第一个分区为父目录，第二个分区为第一个分区目录下的一个子目录，依此类推...
+  如：有分区p1、p2、p3，则在HDFS的目录为：${hive.metastore.warehouse.dir}/tableName/p1=xxx/p2=xxx/p3=xxx的样式。
+
+加载数据到分区表
+load data [local] inpath 'hdfs://hadoop01:9000/partitionTableData' into table partitionTableName partition(partitionField = value);
+
+用户自定义函数：
+	UDF函数：
+		1、继承UDF类，编写函数evaluate函数，必须是public。
+		2、打jar包，不需要包括hadoop和hive的jar包。
+		3、在hive的CLI中添加jar包：add JAR /home/user/xxx.jar。
+		4、在hive的CLI中创建临时函数：create temporary function customFunName as 'package.class'
+		5、查询时，使用自定义的函数名进行查询。
+---------------------------------------------------------
+hive创建复杂的表
+create table if not exists mydb.employee(
+	name string comment 'Employee name',
+	salary string comment 'Employee salary',
+	subordinates array<string> comment 'Ma,es of subordinates',
+	deductions map<string, float> comment 'Keys are deductions names, values are percentages',
+	address struct<street:string, city:string, state:string, zip:int> comment 'Home address')
+-- 数据格式的分隔
+row format delimited
+fields terminated by '\001'
+collection items terminated by '\002'
+map keys terminated by '\003'
+lines terminated by '\n'
+stored as textfile
+-- 表的描述信息
+comment 'Description of the table'
+tblproperties('creator' = 'me', 'created_at' = '2017-02-28 06:30:35')
+location '/hive/mydb.db/employee';
+
+explain：
+	comment：描述信息。
+	row format delimited：用于后后面的进行连用。
+	fields terminted by '\001'：指定列的分隔符。
+	collection items terminated by '\002'：指定数组中每个元素的分隔符。
+	map keys terminated by '\003'：map中每个键的分隔符。
+	lines terminated by '\n'：每行数据的分隔符，默认为\n，也只能是\n。
+	stored as textfile：存储的文件的格式，有textfile、sequencefile、rcfile等。
+	tblproperties：定义表的属性信息，dbproperties则定义数据库的属性信息。
+	location：自定义此表的存放路径，默认为hive.metasotre.warehouse.dir目录下。
+  map中的每个项(k-v对)，也是使用的collection items terminated by '\002'的分隔符。
+  struct中的每个项，也是使用collection items terminated by '\002'的分隔符。
+Access：
+	map使用key进行访问value：map['key']。
+	array使用下标访问item：colName[2]。
+	struct使用'.'进行访问：colName.structFieldName。  
+
+------------------------------------------------------
+hive在进行join时会将左边的表全部加载进内存，然后逐条和右边表进行join操作。因此，在进行join操作时，可以先将小表写到左边，而将大表写到右边，避免内存泄漏，可以有效利用硬盘盒内存的关系，提高hive的处理能力。
+
+排序：
+order by(colName)：对数据进行全局排序。
+sort by(colName)：在数据进入reduce前排序。
+distribute by(colName)：按列的hashCode发给不同的reduce。
+cluster by(colName)：含有distribute和sort的功能。
+不能指定排序规则(asc/desc)。
+
+Hive不会对数据进行修改，只会对表的数据进行添加，当向表中添加数据时，只是将文件复制到数据仓库目录中(hive-site.xml中配置的hive.metasotre.warehouse.dir的HDFS目录)，文件名就是表名称，添加的数据就是另一个新的文件，新文件的名称为表名称_copy_1，如果多次添加则后面的索引值递增(文件最后的编号)。
+
+
+Hive查询数据并插入到其他的表中(targetTable：目标表，sourceTable：源表)：
+	低效：insert into targetTable as select colName from sourceTable;
+		这种方式，hive会扫描全部的表，如果需要将数据插入到多个表中的话，则会对源表进行扫描多次。
+	高效：from sourceTable
+			insert into targetTable  select colName  --需要插入的第一个表。
+			insert into targetTable2 select colName; --需要插入的第二个表。
+		这种方式只会对于源表扫描一次，而且可以插入到多个表中，插入到多表时的语句和最后的insert into那行语句是类似，只是根据目标表进行修改即可。
+	  col：源表中的列名，如果是全部则用*后面也可以写where过滤条件。
+----------------------------------------------------------------
+结果压缩：
+	set mapred.map.output.compression.codec=org.apache.hadoop.io.compress.SnappyCodec;	// map输出的编解码器
+	set hive.exec.compress.intermediate=true;	// 启用中间结果压缩(map输出压缩)
+	set mapred.output.compression.type=BLOCK;	// 输出压缩的等级，sequencefile有3种压缩方式：NONE、RECORD、BLOCK，默认为RECORD等级(也就是记录登记)，BLOCK等级(也就是块等级)压缩性能最好，还可以分隔。
+	set hive.exec.compress.output=true;	//启用最后结果压缩
+	set mapred.output.compression.codec=org.apache.hadoop.io.compress.GzipCodec;// 结果压缩的编解码器
+	之后数据从其他表中查询而来，并保存为sequencefile文件。
+
+
+
+
+
+
+
+
+
+

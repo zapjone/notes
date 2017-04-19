@@ -1,0 +1,29 @@
+hive和hbase集成
+	hive-site.xml中添加：
+		<property>
+			<name>hive.aux.jars.path</name>
+			<value>file:///home/hadoop/hive/lib/hive-hbase-handler-0.9.0.jar,file:///hadoop/hive/lib/hbase-0.92.0.jar,file:///home/hadoop/hive/lib/zookeeper3.4.3.jar</value>
+		</property>
+		<property>
+			<name>hbase.zookeeper.quorum</name>
+			<value>slave1,slave2,slave3</value>
+		</property>
+启动hive：hive -hiveconf hbase.zookeeper.quorum=zookeeper连接地址
+这里需要查询的表在hbase中已经存在，所以需要使用创建外部表，如：
+	key：行键
+	value：加载的列，下面的content后面的info
+	CREATE EXTERNAL table hbase_table(key string, value int)
+		STORED BY "org.apache.hadoop.hive.hbase.HBaseStorageHandler"
+		WITH SERDEPROPERTIES("hbase.columns.mapping"="content:info")
+		TBLPROPERTIES("hbase.table.name"="stat")
+多列：
+	CREATE EXTERNAL table hbase_table(key string, notename string, createtime string, status string, content string)
+		STORED BY "org.apache.hadoop.hive.hbase.HBaseStorageHandler" WITH
+		SERDEPROPERTIES("hbase.columns.mapping"="ni:nn,ni:ct,ni:st,ci:c")
+		TBLPROPERTIES("hbase.table.name"="n")
+参数说明：
+	hbase.columns.mapping指向对应的列族，多列时，content:info,content:info2;多列族时，content1:info,content2:info
+
+之后就可以使用hive的hql进行查询了
+
+

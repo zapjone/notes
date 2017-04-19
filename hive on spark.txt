@@ -1,0 +1,11 @@
+1、重新编译spark源码：最重要的参数为-Phive
+2、在hive-site.xml中添加spark的安装路径，并设置好SPARK_HOME的环境变量
+3、在hive-cli中设置变量(也可以在${hive_home}/.hiverc文件中编写，这样每次hive-cli启动时都会先读取该文件)：
+set spark.master=yarn-cluster;  //默认即为yarn-cluster模式，该参数可以不配置
+set hive.execution.engine=spark;
+set spark.eventLog.enabled=true;
+set spark.eventLog.dir=hdfs://cdh5/tmp/sparkeventlog;
+set spark.executor.memory=1g;           
+set spark.executor.instances=50;  //executor数量，默认貌似只有2个
+set spark.driver.memory=1g;  
+set spark.serializer=org.apache.spark.serializer.KryoSerializer;

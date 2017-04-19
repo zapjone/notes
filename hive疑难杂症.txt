@@ -1,0 +1,37 @@
+1、hive创建表时出现：
+	Error: Error while processing statement: FAILED: Execution Error, return code 1 from org.apache.hadoop.hive.ql.exec.DDLTask. MetaException(message:For direct MetaStore DB connections, we don't support retries at the client level.) (state=08S01,code=1)。
+原因：在创建mysql时使用的字符集不对，需要修改hive数据库的字符集。
+解决：在mysql中使用命令修改hive数据库字符集：alter database hive character set latin1;
+
+2、Cannot execute statement:impossible to write to binary long since BINLOG_FORMAT = STATEMENT...
+当启动时报错
+	Caused by: javax.jdo.JDOException:Couldnt obtain a new sequence(unique id):Cannot execute statement:impossible to write to binary log since BINLOG_FORMAT = STATEMENT and at least one table uses a storage engine limited to row-logging when transaction isolation level is READ COMMITTED or READ UNCOMMITED.
+	NestedThrowables: java.sql.SQLException:Cannot execute statement:impossible to write to binary log since BINLOG_FORMAT = STATEMENT and at least one table uses a storage engine limited to row-based logging. InnoDB is limited to row-logging when transaction isolation level is READ COMMITED or READ UNCOMMITED.
+原因：这是由于hive的元数据存储MYSQL配置不当引起的
+解决：mysql> set global binlog_format='MIXED'
+
+3、当执行hive客户端时出现如下错误：
+	WARN conf.HiveConf:HiveConf of name hive metastore.local does not exist。
+原因：这是由于在0.10.11或者之后的HIVE版本的hive.metastore.local属性将不再使用。
+解决：将该参数从hive-site.xml文件中删除即可。
+
+4、在启动hive时报如下错误：
+	Permission denied: user=anonymous, access=EECUTE, inode="/tmp":hadoop:supergroup:drwx----
+原因：这是由于Hive没有hdfs:/tmp目录的权限，赋权限即可
+解决：使用hadoop命令修改权限：hadoop dfs -chmod -R 777 /tmp
+
+5、在删除表的时候卡死
+原因：由于是先创建的表，之后再修改的hive数据库的字符集，所以卡死。
+解决：将hive数据库删除，再使用mysql重新创建，创建后修改字符集为latin1，在mysql删除hive数据库时，需要将hive停止，不然mysql也会卡死。
+
+6、如果数据已经存在HDFS上，在不修改原HDFS的目录结构下受益Hive的分区的功能的解决：
+	修改表，添加分区并指定存储路径：
+		HDFS上的存放路径：hdfs://user/name/floder/2017/03/01/file1,file2,file3
+												/2017/03/02/file4,file5
+												....
+												/2017/05/03/file100,file101
+	解决：alter table tableName
+			add partition(yr=2017,mon=03,day=01) localtion '/user/name/folder/2017/03/01';
+		location：指定存放在hdfs的路径，hive不会就该此hdfs的目录的格式名称。
+
+
