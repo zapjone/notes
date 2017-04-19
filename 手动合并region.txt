@@ -1,0 +1,33 @@
+bin/hbase shell
+
+--创建表，并进行于分区(预根据行键拆分region)
+create 'testtable','colfam1', SPLITS=>['row-10','row-30','row-30','row-40','row-50']
+
+--使用ruby代码添加数据
+for i in '0'..'9' do for j in '0'..'9' do 
+	put 'testtable',"row-#{i}#{j}","colfam1:#{j}","#{j}" end end
+
+--将memstore中的数据刷写到磁盘(HDFS)
+flush 'testtable'
+
+--扫描.META.表，获取其region信息
+scan 'hbase:meta',COLUMNS=>['info:regioninfo']
+
+--退出hbase shell
+exit
+
+--停止hbase集群
+bin/stop-hbas.sh
+
+--手动合并region，必须是两个相邻的region，前面扫描.META.表只是为了查看region的名称
+bin/hbase org.apache.hadoop.hbase.util.Meger testtable testtable,row-20,1309614509041.e7c16267eb30e147ed988c63d40f982. testtable,row-30,1309614509041.a9cde1cbc7d1a21b1aca2ac7fdaa30ad8.
+
+
+
+
+
+
+
+
+
+

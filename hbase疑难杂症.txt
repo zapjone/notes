@@ -1,0 +1,35 @@
+1、HBase报错org.apache.hadoop.hbase.NotServingRegionException: Region hbase:meta,,1 is not online on hadoop02,16020,1488675571789
+	原因：这是由于HBase的region达到一定大小的时候，就会发生分裂，来的region会下线。
+	   分裂过程：
+	   		1、老region开始下线，这里的对应的就报告is not online。
+	   		2、老region下线。
+	   		3、老region关闭，这里应该对应的报错日志中的is cloing。
+	解决：1、将region的大小设置为无限大，这样就不会发生分裂。
+		  2、将region的大小设置大，具体多大就需要查看具体业务情况和发送分裂时的region的大小，在慢慢进行放大，直到合适为止。
+3、报错：Too many open files，这是由于操作系统的最大打开文件数量为2014，而HBase中会打开大量的文件，需要将这个值进行扩大。（可以使用lsof -p 进程pid来查看打开的文件）
+	解决：编辑/etc/sysctl.conf，并调整fs.file-max的值。
+		在配置文件/etc/security/limits/limits.conf中设置nproc的值以调整文件可以被引用的进程数的上限(但是在ubuntu中如果hadoop和hbase是以不同的用户启动的话，需要另行设置)。
+
+2、报错：dfs.DFSClientt:Could not obtain block...
+	原因：这是由于DataNode所处理的文件上限达到了，扩大DataNode的文件处理上限。
+	解决：在dfs-site.xml中添加：
+		<property>
+			<name>dfs.datanode.max.xcievers</name>
+			<value>4096</value>
+		</property>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

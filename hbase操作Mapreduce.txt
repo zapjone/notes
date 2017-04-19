@@ -1,0 +1,19 @@
+1、Mapper类继承自TableMapper<Text, IntWritable>
+		Text：mapper的输出key类型。
+		IntWritable：mapper的输出value类型。
+	map(ImmutableBytesWritable key, Result value, Context context)
+		key：rowkey。
+		value：Result，一行数据。
+		context：上下文。
+2、Reduce类继承自TableReducer<Text, IntWritable, ImutableBytesWritable>
+		Text：reducer的输入key。
+		IntWritable：reduce的输入value。
+	reduce(Text key, Iterable<IntWritable> values, Context context)
+		key：reduce的输入key。
+		values：reduce的输入value。
+3、
+	使用HBase提供的工具类来初始化Mapper和Reducer类
+	TableMapReduceUtil.initTableMapperJob(tableName, scan, Mapper.class, Text.class, IntWritable.class, job);
+	TableMapReduceUtil.initTableReducerJob(tableName2, Reducer.class, job);
+4、提交任务后退出
+	System.exit(job.waitForCompletion(true) ? 0: 1);

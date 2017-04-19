@@ -1,0 +1,58 @@
+HBase可以利用协处理器对HBase来进行二级索引，二级索引是对region级别的索引而不是对于表级别的索引。
+HBase的协处理器分为两种：Observer和Endpoint
+(a)、Observer（类似于数据库中的触发器）：
+	Observer类型的又分为3种：
+		1、RegionObserver：主要提供客户端的数据操作事件钩子：Get、Put、Delete、Scan等。
+		2、MasterObserver：主要提供DDL类型的操作钩子。如创建、删除、修改数据表等。
+		3、WALObserver：主要提供WAL日志相关操作的钩子。
+(b)、Endpoint（类似与数据库中的存储过程）：
+	EndPoint是动态RPC插件的接口，它的实现代码被部署在服务器端（regionServer），从而能够通过HBase RPC调用。
+Observer协处理器允许集群在正常的客户端操作过程中有不同的行为表现。
+Endpoint协处理器允许扩展集群能力，对客户端应用开发新的运行命令，在RegionServer上执行
+
+实现：
+	Observer实现：
+		1、Observer实现需要继承子BaseRegionServer/RegionObserver
+		2、打包
+		3、加载，加载方式有3种：
+			a、配置文件加载：即通过hbase-site.xml文件配置加载，一般这样的协处理器都是系统级别的，全局的协处理器，如权限控制等。
+			b、shell加载，可以通过alter命令来对表进行schema进行修改来加载协处理器。
+			c、通过API代码实现，即通过API的方式来加载协处理器。
+			第二种加载方式：
+				alter 'tableName',METHOD=>'table_att','coprocessor'=>'hdfs://hadoop01:9000/hbase-observer.jar|com.observer.MyRegionServer|1001'
+				其中：'coprocessor'=>'jar文件在hdfs上的绝对路径|协处理器主类|优先级|协处理器参数'
+				上述协处理器并没有参数，所有未给出参数，对于协处理器的优先级有SYSTEM和USER。
+		4、检查协处理器的加载:
+			describe 'tableName'
+				hbase(main):021:0> describe 'coprocessor_table'
+					Table coprocessor_table is ENABLED                                              
+					coprocessor_table, {TABLE_ATTRIBUTES => {coprocessor$1 => 'hdfs://hadoop01:9000/hbase-observer.jar|com.observer.MyRegionObserver|1001'} 
+	部署observer后，操作时，只要协处理器中有定义的响应钩子则会进行触发相应的检查。
+	Endpoint实现：
+		1、定义protobuf的schema文件，并使用命令进行编译为java文件，命令：protoc --java_out=目标文件夹路径 schema文件路径。
+		2、创建服务类，并继承protobuf所编译成java的服务类(即在protoc文件中用service所定义的)，再实现CoprocessorService和Coprocessor，实现其方法：start(初始化)、stop(停止)、service(获取的service，直接返回this)、customServiceMehot(protoc文件中的service类中的方法)。
+		3、打成jar包并上传到hdfs，和obsever方式一样，也有3种部署方式，
+			shell命令方式：
+				alter 'tableName', METHOD=>'table_att','coprocessor'=>'hdfs上存在的endpoint的jar包存放路径|endpoint的完整类名|顺序'。
+		4、客户端用服务协议(protoc文件编译过来的类的服务)
+			// 创建一个服务,table是获取到的一个表
+        	CoprocessorRpcChannel channel = table.coprocessorService(Bytes.toBytes("row1"));
+        	// 一个reion上可能存在多个rpc，需要确定调用那个rpc
+        	GetRowCount.IbmDeveloperWorksService.BlockingInterface service = GetRowCount
+                .IbmDeveloperWorksService.newBlockingStub(channel);
+        	// 构建rpc的入口参数
+        	GetRowCount.GetRowCountRequest.Builder request = GetRowCount.GetRowCountRequest.newBuilder();
+        	// 设置属性，在protoc文件的定义的属性，可以有多个
+        	request.setReCount(true);
+        	// 调用rpc
+        	GetRowCount.GetRowCountResponse response = service.getRowCount(null, request.build());
+        	// 获取rpc调用结果
+         	long result = response.getRowCount();
+    部署到region server的endpoint在region上以为rpc的服务端运行的，客户端通过rpc进行调用并获取到结果。
+
+
+
+
+
+
+

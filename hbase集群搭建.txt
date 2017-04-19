@@ -1,0 +1,72 @@
+1.上传hbase安装包
+
+2.解压
+
+3.配置hbase集群，要修改3个文件（首先zk集群已经安装好了）
+	注意：要把hadoop的hdfs-site.xml和core-site.xml 放到hbase/conf下，也可以在hbase-env.sh文件中进行配置HADOOP_CONF_DIR指定hadoop的配置文件的目录
+	
+	3.1修改hbase-env.sh
+	export JAVA_HOME=/usr/java/jdk1.7.0_55
+	//告诉hbase使用外部的zk，如果不设置(默认为true)，则hbase会启动hbase下自带的zookeeper
+	export HBASE_MANAGES_ZK=false
+	
+	vim hbase-site.xml
+	<configuration>
+		<!-- 指定hbase在HDFS上存储的路径 -->
+        <property>
+            <name>hbase.rootdir</name>
+            <value>hdfs://ns1/hbase</value>
+        </property>
+		<!-- 指定hbase是分布式的 -->
+        <property>
+            <name>hbase.cluster.distributed</name>
+            <value>true</value>
+        </property>
+		<!-- 指定zk的地址，多个用“,”分割 -->
+        <property>
+            <name>hbase.zookeeper.quorum</name>
+            <value>weekend04:2181,weekend05:2181,weekend06:2181</value>
+        </property>
+        <!--如果hbase.zookeeper.quorum中没有配置端口，则需要配置hbase.zookeeper.property.clientPort来指定zookeeper的端口，可以将服务器和端口分开配置-->
+        <property>
+        	<name>hbase.zookeeper.property.clientPort</name>
+        	<value>2181</value>
+        </property>
+	</configuration>
+	
+	vim regionservers
+	weekend03
+	weekend04
+	weekend05
+	weekend06
+	
+	3.2拷贝hbase到其他节点
+		scp -r /weekend/hbase-0.96.2-hadoop2/ weekend02:/weekend/
+		scp -r /weekend/hbase-0.96.2-hadoop2/ weekend03:/weekend/
+		scp -r /weekend/hbase-0.96.2-hadoop2/ weekend04:/weekend/
+		scp -r /weekend/hbase-0.96.2-hadoop2/ weekend05:/weekend/
+		scp -r /weekend/hbase-0.96.2-hadoop2/ weekend06:/weekend/
+4.将配置好的HBase拷贝到每一个节点并同步时间。
+
+5.启动所有的hbase
+	分别启动zookeeper
+		./zkServer.sh start
+	启动hbase集群
+		start-dfs.sh
+	启动hbase，在主节点上运行：
+		start-hbase.sh
+6.通过浏览器访问hbase管理页面
+	192.168.1.201:60010
+7.为保证集群的可靠性，可以启动一个备份的HMaster
+	hbase-daemon.sh start master
+
+hbase ui新版本默认端口为：16010(master)、16030(region)
+修改默认hbase ui端口：
+	hbase.master.info.port // master ui端口
+	hbase.regionserver.info.port// region ui端口
+
+hbase JXM：
+	1、在${HBASE_HOME}/conf/hbase-env.sh文件中打开JMX的配置
+	2、使用java自带的jconsole.exe进行远程访问，访问地址：
+			service:jmx:rmi:///jndi/rmi://server:port/jmxrmi,在第一步中如果没有修改端口，默认为10101
+	

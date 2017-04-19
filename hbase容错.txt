@@ -1,0 +1,18 @@
+在habse中，当Master和RegionServer启动的时候都会在zookeeper上进行注册，RegionServer并会定期向Master汇报心跳(资源使用、加载的region、访问的tps等)。
+
+每个HRegionServer共享一个HLog(WAL)文件，用户写数据时，需要向将操作写入到HLog中，之后再写入到memStore中，如果HLog写入失败了，则直接反馈client，写入数据失败。
+
+当master出现故障后，并不会印象client的数据读取，client数据读取只会访问RegionServer，而RegionServer的region split和region负载均衡都不能执行了。
+
+当RegionServer故障后，Master利用zookeeper感知到，会将宕机的RegionServer上的HLog根据region来进行拆分，将拆分后的HLog放入到region的目录下，在将这些region负载均衡到其他活动的RegionServer上，当活动的RegionServer在加载这个reion的时候，如果发现到这个region还有HLog信息，则将HLog中的数据加载到memStore中。
+
+正常RegionServer启动时，RegionServer会在打开region时创建HRegion实例，会为每个表的列族创建一个Store实例和一个memStore。当memStore的数据达到一定阈值的时候，会将数据刷写到HDFS中，刷写的文件是用HFile封装的StoreFile存储的。已经刷写到HDFS的数据的HLog会移动到oldLog文件夹下，并重新产生新的HLog文件记录操作日志。
+
+
+
+
+
+
+
+
+

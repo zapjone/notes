@@ -1,0 +1,55 @@
+在一个region中有一个或多个store，每个store对应一个column families(列族)，一个sotre中包含一个memstore和0或多个store files。每个column family的分开存放和公开访问的。
+
+Pre-splitting(与split)：
+	当一个table刚被创建时，HBase默认的分配一个region给table。这个时候所有的读写都是访问同一个regionserver的同一个region中，这个时候就达不到负载均衡的效果，集群的其他regionserver就可能出现比较空闲的状态。为了解决这个问题可以在创建表的时候就配置好，生成多个region。
+	HBase自带了2中pre-split算法：HexStringSplit和UniformSplit
+		1、HexStringSplit：如果row key是十六进制的字符串作为前缀的话，就适合使用HexStringSplit。
+		如在shell中：
+			hbase org.apache.hadoop.hbase.util.RegionSplitter pre_split_table HexStringSplit -c 10 -f f1
+		-c 10：region数量为10个。
+		-f f1：列族名为f1。
+
+---------------------------------------------------
+
+hbase 0.94.0版本中，对region的split方式引入的一个非常方便的SplitPolicy，通过这个SplitPolicy，可以主动的干预控制region split的方式。在org.apache.hadoop.hbase.regionserver包中，可以找到这么几个自带的splitPolicy：
+	ConstantSizeRegionSplitPolicy，IncreasingToUpperBoundRegionSplitPolocy，KeyPrefixRegionSplitPolicy。
+这三种split策略的使用场景：
+	1、ConstantSizeRegionSplitPolicy：按固定长度分割region，固定长度取值优先获取table的"MAX_FILESIZE"值，若没有设置该属性，则采用hbase-site.xml中配置单hbase.hregion.max.filesize值，在0.94版本中的这个值默认已经被设置为10G，在0.94以前的版本为1G，采用该策略后，当table的某个region中的某个store大毒枭超过预定的最大固定长度时，对该region进行split。splitPoint算法的选择还是依据“数据对半”原则，找到该region的最大store的中间长度的rowkey进行split。
+	2、IncreasingToUpperBoundRegionSplitPolicy：按照region数量累增划分region，该策略为hbase0.94默认使用的策略，采用该策略分隔的region大小是不相等的，每次新region的赌大小随着region的数量的增多而增大。具体增长算法为：
+		math.min(R^2 * "MEMSTORE_FLUSHSIZE"||"hbase.hregion.memstore.flush.size", "hbase.hregion.max.filesize")：小于region的最大之后时,region个数的平方 * 内存store的刷写大小(默认为128M).
+	R：当前这个region所在regionserver中对应此table的region的数量。R^2:为R的平方
+	MEMSTORE_FLUSHSIZE：为table创建时指定的大小，若table指定此属性则忽略下面的值：
+		hbase.hregion.memstore.flush.size
+	hbase.hregion.memstore.flush.size为和base-site.xml中设定的大小，默认为128M。
+	hbase.hregion.max.filesize为hbase-site.xml中设置的单个region的最大值，默认为10G，在0.94前的版本为1G。
+	每次region大小是取出上述两个size中较小的那个值。
+	例如：
+		假如使用hbase.hregion.memstore.flush.size=128M，hregion.max.filesize=10G，那么每次region的增长为：512M、1152M、2G、3.2G、4.6G、6.2G、etc。当region增长到9个时，9的平方9*9*128M/1024M=10.125G > 10GG，至此以后region split大小都固定为10G。
+	3、KeyPrefixRegionSplitPolicy：指定rowkey前缀位数划分region，通过读取table的prefix_split_key_policy.prefix_length属性，该属性为数字类型，表示前缀长度，在进行split时，按此长度对splitPoint进行截取。这种策略比较适合固定前缀的rowkey。当table中没有设置prefix_split_key_policy.prefix_length属性，或prefix_split_key_policy.prefix_length属性不为Integer类型时，指定此策略效果等同于使用IncreasingToUpperBoundRegionSplitPolicy。
+
+---------------------------------------------------------
+
+region splits执行过程：
+	region server处理写请求时，会先写入memstore，当memstore达到一定大小时，会写入磁盘成为一个storeFile(HFile)。这个过程memstore flush。当store file(hfile)堆积到一定大小时，region server会执行compact(合并)操作，把他们合并成一个大文件。当每次执行完flush或者compact后，都会判断是否需要split。放需要split的时，会生成两个region文件，但是parent region(父region)数据file并不会发生复制操作，而是新产生的两个region会有这些file的引用。这些引用文件会在下次发生compact操作的时候清理掉，并且当region中有引用文件时（有其他region指向这个region），是不会再进行split操作的。注意：如果当region中存在引用文件时，而且写操作很频繁和集中，可能会出现region变得非常大，但是却不split。因为写操作集中和频繁，但是没有均匀到每个引用文件中，所以region一直存在引用文件，不能进行分裂。
+	region server在split开始和结束都会通知master，并且需要更新.META.表，这样客户端就能知道有新的region。在hdfs中重新排列目录结构和数据文件。split是一个复杂的操作。在split region时会记录当前执行的状态，当出错的时候，会根据状态进行回滚。
+
+1、region server决定split region，第一步，region server在zookeeper中创建目录，设置状态为SPLITTING。
+2、因为master有对zookeeper上的节点进行监控，所以，master会得到parent region需要split
+3、region server在hdfs中创建splits的子目录。
+4、region server关闭parent region。强制flush缓存，并且在本地数据结构中标记region为下线状态。如果这个时候客户端刚好请求道parent region，会抛出NotServingRegionException。这时客户端会进行补偿性重试。
+5、region server在split目录下分别为两个daughter region创建目录和必要的数据结构。然后创建两个应用文件指向parent region的文件。
+6、region server在HDFS中创建真正的region目录，并将引用文件移动到对于的目录下。
+7、region server发送一个put请求到.META.表中，并且在.META.表中设置parent region为下线状态，并且在parent region对应的row中两个daughter region的信息。但是这个时候在.META.表中daughter region还不是独立的row。这个时候client scan .META.表，会发现parent region正在split，但是client还看不到daughter region的信息。当这个put成功之后，parentregion split会被执行。如果ROC成功之前region server就失败了，master和下次打开parent region的region server会清除关于这次split的脏状态。但是当RPC返回结果前成功了，即.META.成功更新之后，region split的流程还会继续进行下去。相当于是个补偿机制，下次在打开这个parent region的时候会进行相应的清理操作。
+8、region server打开两个daughter region接受写操作。
+9、region server在.META.表中增加daughters A和B region的相关信息，在这以后，client就能发现这两个新的regions并且能发哦是那个请求到这两个新的region了。client本地具有.MEAT.表的缓存，当访问parent region的时候，发现parent region下线了，就会重新访问.META.表获取最新的信息，并且要更新本地缓存。
+10、region server更新zookeeper上的znode的状态为SPLIT。master就能知道状态更新了，master的平衡机制会判断是否需要daughter regions分配到其他region server中。
+11、在split之后，meta和HDFS依然有引用指向parent region，当compact操作发生在daughter regions中，会重写数据file，这个时候引用会被逐渐的去掉，垃圾回收任务会定时检测daughter regions是否还有引用指向parent region，如果没有应用指向parent region，则parent region就会被删除。
+
+
+
+
+
+
+
+
+
